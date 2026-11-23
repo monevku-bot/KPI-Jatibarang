@@ -104,6 +104,26 @@
             <p class="text-xs text-emerald-100/90 sm:text-sm">
               Area Cirebon • Kanwil X Bandung • Konsolidasi CP &amp; 8 Outlet (6 UPC + 2 Colocation)
             </p>
+            <!-- Lencana Total Pengunjung & Sedang Online (Gratis — GitHub Pages) -->
+            <div class="no-print mt-2 flex flex-wrap items-center gap-2">
+              <div class="inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-2 py-1 ring-1 ring-white/15" title="Total kunjungan halaman dashboard (via visitorbadge.io gratis)">
+                <i data-lucide="eye" class="h-3.5 w-3.5 text-amber-300 shrink-0"></i>
+                <img id="visitor-total-badge" src="https://api.visitorbadge.io/api/visitors?path=pegadaian-cp-jatibarang-kpi&amp;label=Pengunjung&amp;labelColor=%2300542D&amp;countColor=%23C8A138&amp;style=flat-square" alt="Total Pengunjung" class="h-4 rounded-sm" />
+                <span id="visitor-total-fallback" class="hidden text-[11px] font-bold text-amber-200">Pengunjung: 1</span>
+              </div>
+              <div class="inline-flex items-center gap-1.5 rounded-lg bg-black/20 px-2 py-1 ring-1 ring-white/15" title="Jumlah pengguna yang sedang membuka dashboard saat ini (via whos.amung.us gratis)">
+                <span class="relative flex h-2 w-2 shrink-0">
+                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-400"></span>
+                </span>
+                <span class="text-[11px] font-semibold text-emerald-100">Online:</span>
+                <span id="wau-online-wrap" class="inline-flex items-center min-h-[16px]">
+                  <script id="_waujb2">var _wau = _wau || []; _wau.push(["small", "kpijatibarang", "jb2"]);</script>
+                  <script async src="https://waust.at/s.js"></script>
+                </span>
+                <span id="online-fallback" class="hidden text-[11px] font-bold text-emerald-200">1 aktif</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1934,6 +1954,40 @@
       setupDropzone('dropzone-curr', 'input-curr', 'btn-pick-curr', 'curr');
       setupDropzone('dropzone-dtd', 'input-dtd', 'btn-pick-dtd', 'dtd');
       setupDropzone('dropzone-mtd', 'input-mtd', 'btn-pick-mtd', 'mtd');
+
+      // Graceful fallback for visitor & live online badges when offline or blocked
+      (function initVisitorBadges() {
+        const img = document.getElementById('visitor-total-badge');
+        const fbTotal = document.getElementById('visitor-total-fallback');
+        const wauWrap = document.getElementById('wau-online-wrap');
+        const fbOnline = document.getElementById('online-fallback');
+
+        function showLocalFallback() {
+          let visits = 1;
+          try {
+            visits = (parseInt(localStorage.getItem('kpi_jtb_visits') || '0', 10) || 0) + 1;
+            localStorage.setItem('kpi_jtb_visits', String(visits));
+          } catch (e) {}
+          if (img) img.classList.add('hidden');
+          if (fbTotal) {
+            fbTotal.textContent = `Pengunjung: ${visits.toLocaleString('id-ID')}`;
+            fbTotal.classList.remove('hidden');
+          }
+        }
+
+        if (img) {
+          img.addEventListener('error', showLocalFallback);
+          if (img.complete && img.naturalWidth === 0) showLocalFallback();
+        }
+
+        // If whos.amung.us widget does not inject an image/link within 3.5s (e.g., adblock or offline preview), show clean fallback
+        setTimeout(() => {
+          if (wauWrap && !wauWrap.querySelector('a, img, iframe')) {
+            wauWrap.classList.add('hidden');
+            if (fbOnline) fbOnline.classList.remove('hidden');
+          }
+        }, 3500);
+      })();
 
       // Initial Render
       renderAll();
