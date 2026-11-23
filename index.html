@@ -375,8 +375,14 @@
               <option value="GAIN_MTD">Naik MtD (&gt; 0 poin)</option>
             </select>
           </div>
-          <div class="text-xs text-slate-500">
-            Arahkan kursor ke nominal Rupiah di kolom <strong>Kurang / Lebih Target</strong> untuk melihat selisih eksak.
+          <div class="flex flex-wrap items-center gap-2.5">
+            <div class="inline-flex items-center gap-2 rounded-xl bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-900 ring-1 ring-emerald-200" title="Otomatis berkurang setiap hari aktif sampai 31 Desember 2026 (23 Nov = 30 hari, 24 Nov = 29 hari, ..., 31 Des = 0 hari)">
+              <i data-lucide="calendar-days" class="h-3.5 w-3.5 text-emerald-700 shrink-0"></i>
+              <span>Sisa Hari Aktif s.d. 31 Des 2026:</span>
+              <input id="active-days-input" type="number" min="0" max="60" value="30" aria-label="Sisa Hari Aktif" class="w-12 rounded-lg border border-emerald-300 bg-white px-1.5 py-0.5 text-center text-xs font-black text-emerald-800 focus:border-emerald-600 focus:outline-none" />
+              <span>hari</span>
+              <button id="btn-reset-days" type="button" class="ml-0.5 text-[10px] font-bold text-emerald-700 underline hover:text-emerald-900" title="Kembalikan ke hitungan otomatis tanggal hari ini">Auto</button>
+            </div>
           </div>
         </div>
       </div>
@@ -392,6 +398,7 @@
                 <th class="px-2.5 py-3 text-right" id="tbl-th-target">Target Bulanan</th>
                 <th class="px-2.5 py-3 text-right">Realisasi</th>
                 <th class="px-2.5 py-3 text-right" title="Selisih Realisasi terhadap Target 110% (untuk NPL/LAR: batas aman = Target / 1,10)">Kurang / Lebih (110%)</th>
+                <th id="tbl-th-daily" class="px-2.5 py-3 text-right" title="Kebutuhan pencapaian per hari aktif s.d. 31 Desember 2026 untuk mencapai Target Tahunan 110%">Target / Hari (30 hr)</th>
                 <th class="px-2.5 py-3 text-right">Ach %</th>
                 <th class="px-2.5 py-3 text-right">Nilai KPI</th>
                 <th class="px-2.5 py-3 text-right" title="Potensi penambahan poin jika indikator mencapai target 110% ((Bobot × 1,10) - Nilai KPI saat ini)">Potensi +Poin (110%)</th>
@@ -633,8 +640,85 @@
         activeTab: 'ringkasan',
         search: '',
         filterComp: 'ALL',
-        filterZone: 'ALL'
+        filterZone: 'ALL',
+        activeDaysOverride: null
       };
+
+      // Exact 30 active working days from 23 Nov 2026 to 30 Dec 2026 (excludes 5 Sundays + 24-26 Dec year-end holidays; 31 Dec = 0 days)
+      const ACTIVE_DAYS_2026 = [
+        '2026-11-23','2026-11-24','2026-11-25','2026-11-26','2026-11-27','2026-11-28','2026-11-30',
+        '2026-12-01','2026-12-02','2026-12-03','2026-12-04','2026-12-05',
+        '2026-12-07','2026-12-08','2026-12-09','2026-12-10','2026-12-11','2026-12-12',
+        '2026-12-14','2026-12-15','2026-12-16','2026-12-17','2026-12-18','2026-12-19',
+        '2026-12-21','2026-12-22','2026-12-23','2026-12-28','2026-12-29','2026-12-30'
+      ];
+
+      function calcAutoRemainingDays() {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${y}-${m}-${d}`;
+        if (todayStr >= '2026-12-31') return 0;
+        return ACTIVE_DAYS_2026.filter(dt => dt >= todayStr).length;
+      }
+
+      function getRemainingActiveDays() {
+        if (state.activeDaysOverride !== null && !Number.isNaN(state.activeDaysOverride)) {
+          return Math.max(0, Math.round(state.activeDaysOverride));
+        }
+        return calcAutoRemainingDays();
+      }
+
+      function fmtDailyTargetHtml(row, days) {
+        const tgtYear = row.target_tahunan;
+        const real = row.realisasi;
+        if (tgtYear === null || tgtYear === undefined || real === null || real === undefined) {
+          return '<span class="text-slate-300">—</span>';
+        }
+        const kind = getMetricKind(row.sub);
+        if (isInverted(row.sub)) {
+          const limit110 = tgtYear / 1.10;
+          const over = real - limit110;
+          if (over <= 0) {
+            return `<span class="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700" title="Sudah di bawah batas Tahunan 110% (${fmtNum(limit110,2)}%)">Aman</span>`;
+          }
+          if (days <= 0) {
+            return `<span class="inline-flex items-center rounded-md bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800" title="Sisa hari aktif 0 (31 Des 2026). Masih over +${fmtNum(over,2)}%">Batas Akhir</span>`;
+          }
+          const perDay = over / days;
+          return `<span class="inline-flex items-center rounded-md bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700" title="Harus turun ${fmtNum(over,2)}% dalam ${days} hari aktif agar mencapai 110% Tahunan (batas ${fmtNum(limit110,2)}%)">-${fmtNum(perDay, 2)}%/hr</span>`;
+        }
+
+        const tgt110 = tgtYear * 1.10;
+        const gap110 = tgt110 - real;
+        const gap100 = Math.max(0, tgtYear - real);
+        if (gap110 <= 0) {
+          return `<span class="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700" title="Sudah melampaui Target Tahunan 110% (${fmtMetricVal(tgt110, row.sub)})">Tercapai</span>`;
+        }
+        if (days <= 0) {
+          return `<span class="inline-flex items-center rounded-md bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800" title="Sisa hari aktif 0 (31 Des 2026). Sisa target 110%: ${fmtMetricVal(gap110, row.sub)}">Batas Akhir</span>`;
+        }
+
+        const perDay110 = gap110 / days;
+        const perDay100 = gap100 / days;
+        let label = '';
+        let tip = '';
+        if (kind === 'currency') {
+          label = '+' + fmtCompactRp(perDay110) + '/hr';
+          tip = `Ke Target Tahunan 110%: ${fmtExactRp(perDay110)}/hari (${days} hr aktif) | Ke 100%: ${gap100 > 0 ? fmtExactRp(perDay100) + '/hari' : 'Tercapai'}`;
+        } else if (kind === 'percent') {
+          label = '+' + fmtNum(perDay110, 2) + '%/hr';
+          tip = `Ke Target Tahunan 110% (${fmtNum(tgt110,2)}%): +${fmtNum(perDay110,2)}%/hari | Ke 100%: ${gap100 > 0 ? '+' + fmtNum(perDay100,2) + '%/hr' : 'Tercapai'}`;
+        } else if (kind === 'gram') {
+          label = '+' + fmtNum(perDay110, 2) + ' gr/hr';
+          tip = `Ke Target Tahunan 110% (${fmtNum(tgt110,2)} gr): +${fmtNum(perDay110,2)} gr/hari | Ke 100%: ${gap100 > 0 ? '+' + fmtNum(perDay100,2) + ' gr/hr' : 'Tercapai'}`;
+        } else {
+          label = '+' + fmtNum(perDay110, 1) + '/hr';
+          tip = `Ke Target Tahunan 110% (${fmtInt(tgt110)}): +${fmtNum(perDay110,1)}/hari | Ke 100%: ${gap100 > 0 ? '+' + fmtNum(perDay100,1) + '/hr' : 'Tercapai'}`;
+        }
+        return `<span class="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[11px] font-bold text-indigo-800" title="${tip}">${label}</span>`;
+      }
 
       let charts = {
         units: null,
@@ -1242,7 +1326,11 @@
         const cu = state.data.curr[state.activeUnit];
         const diffs = getUnitDiffs(state.activeUnit, state.mode);
         const mode = state.mode;
+        const remDays = getRemainingActiveDays();
         document.getElementById('tbl-th-target').textContent = mode === 'bulanan' ? 'Target Bulanan' : 'Target Tahunan';
+        document.getElementById('tbl-th-daily').textContent = `Target / Hari (${remDays} hr)`;
+        const daysInp = document.getElementById('active-days-input');
+        if (daysInp && document.activeElement !== daysInp) daysInp.value = remDays;
 
         const compSel = document.getElementById('kpi-filter-comp');
         const prevVal = compSel.value;
@@ -1266,7 +1354,7 @@
 
         const tbody = document.getElementById('kpi-table-body');
         if (filtered.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="11" class="px-4 py-8 text-center text-slate-400">Tidak ada indikator yang sesuai filter.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="12" class="px-4 py-8 text-center text-slate-400">Tidak ada indikator yang sesuai filter.</td></tr>';
         } else {
           tbody.innerHTML = filtered.map(d => {
             const rawRow = cu.rows[d.no - 1];
@@ -1291,6 +1379,7 @@
                 <td class="px-2.5 py-2.5 text-right text-slate-600" ${tgtTooltip}>${fmtMetricVal(d.target, d.sub)}</td>
                 <td class="px-2.5 py-2.5 text-right font-semibold text-slate-900" ${realTooltip}>${fmtMetricVal(d.realisasi, d.sub)}</td>
                 <td class="px-2.5 py-2.5 text-right">${fmtGapHtml(rawRow, mode)}</td>
+                <td class="px-2.5 py-2.5 text-right">${fmtDailyTargetHtml(rawRow, remDays)}</td>
                 <td class="px-2.5 py-2.5 text-right">${achBadge}</td>
                 <td class="px-2.5 py-2.5 text-right font-bold text-slate-900">${d.bobot ? fmtNum(d.nilai_curr, 2) : '—'}</td>
                 <td class="px-2.5 py-2.5 text-right">${(() => {
@@ -1325,7 +1414,7 @@
           <tr>
             <td colspan="2" class="px-2.5 py-3 text-left">TOTAL SKOR KPI — ${cu.name}</td>
             <td class="px-2.5 py-3 text-right">${fmtNum(totBobot, 1)}</td>
-            <td colspan="4" class="px-2.5 py-3 text-right text-xs font-medium text-emerald-800">${state.data.dtd_date.replace(' 2026','')}: ${fmtNum(dtdScore, 2)} • ${state.data.mtd_date.replace(' 2026','')}: ${fmtNum(mtdScore, 2)}</td>
+            <td colspan="5" class="px-2.5 py-3 text-right text-xs font-medium text-emerald-800">Sisa ${remDays} hr aktif • ${state.data.dtd_date.replace(' 2026','')}: ${fmtNum(dtdScore, 2)} • ${state.data.mtd_date.replace(' 2026','')}: ${fmtNum(mtdScore, 2)}</td>
             <td class="px-2.5 py-3 text-right text-base font-black">${fmtNum(totScore, 2)}</td>
             <td class="px-2.5 py-3 text-right" title="Proyeksi skor jika seluruh indikator mencapai target 110%: ${fmtNum(projScore, 2)}">
               ${totPotensi > 0.001 ? `<span class="inline-flex items-center rounded-full bg-amber-200/80 px-2.5 py-0.5 text-xs font-extrabold text-amber-950">+${fmtNum(totPotensi, 2)}</span>` : '<span class="text-xs text-emerald-700">0,00</span>'}
@@ -1916,6 +2005,20 @@
       document.getElementById('kpi-filter-zone').addEventListener('change', (e) => {
         state.filterZone = e.target.value;
         renderKpiTable();
+      });
+
+      document.getElementById('active-days-input').addEventListener('input', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!Number.isNaN(v) && v >= 0) {
+          state.activeDaysOverride = v;
+          renderKpiTable();
+        }
+      });
+
+      document.getElementById('btn-reset-days').addEventListener('click', () => {
+        state.activeDaysOverride = null;
+        renderKpiTable();
+        showToast(`Sisa hari aktif dikembalikan ke otomatis (${calcAutoRemainingDays()} hari).`);
       });
 
       document.getElementById('btn-copy-wa-header').addEventListener('click', () => copyText(buildWaSummary()));
